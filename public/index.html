@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Shortener</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-8">URL Shortener</h1>
+        
+        <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-6">
+            <!-- Debug Info -->
+            <div id="debug" class="mb-4 p-4 bg-gray-100 font-mono text-sm"></div>
+
+            <form id="urlForm" class="mb-6">
+                <div class="flex gap-4">
+                    <input 
+                        type="url" 
+                        id="urlInput" 
+                        placeholder="Enter your URL (e.g., https://example.com)" 
+                        required
+                        class="flex-1 px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                    <button 
+                        type="submit"
+                        class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                        Shorten
+                    </button>
+                </div>
+            </form>
+
+            <div id="result" class="hidden">
+                <div class="p-4 bg-gray-50 rounded">
+                    <p class="font-medium mb-2">Your shortened URL:</p>
+                    <div class="flex gap-4 items-center">
+                        <a id="shortUrl" href="#" target="_blank" class="text-blue-500 hover:underline break-all"></a>
+                        <button 
+                            onclick="copyUrl()"
+                            class="bg-gray-200 text-gray-700 px-4 py-1 rounded text-sm hover:bg-gray-300"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <p class="font-medium mb-2">Statistics:</p>
+                    <p>Clicks: <span id="clicks">0</span></p>
+                    <p>Created: <span id="createdAt">Loading...</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const debugEl = document.getElementById('debug');
+        
+        function logDebug(message, data) {
+            console.log(message, data);
+            debugEl.innerHTML += `<div>${message}: ${JSON.stringify(data)}</div>`;
+        }
+
+        // Check if we're on a short URL page
+        const pathSegments = window.location.pathname.split('/');
+        const possibleShortUrl = pathSegments[pathSegments.length - 1];
+        if (possibleShortUrl && possibleShortUrl.length === 8) {
+            logDebug('Detected short URL', possibleShortUrl);
+            updateStats(possibleShortUrl);
+        }
+
+        const form = document.getElementById('urlForm');
+        const result = document.getElementById('result');
+        const shortUrlEl = document.getElementById('shortUrl');
+        const clicksEl = document.getElementById('clicks');
+        const createdAtEl = document.getElementById('createdAt');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const url = document.getElementById('urlInput').value;
+            logDebug('Submitting URL', url);
+
+            try {
+                const response = await fetch('/api/shorten', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url }),
+                });
+
+                logDebug('Shorten response status', response.status);
+                const data = await response.json();
+                logDebug('Shorten response data', data);
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to shorten URL');
+                }
+
+                const shortUrl = `${window.location.origin}/${data.shortUrl}`;
+                shortUrlEl.href = shortUrl;
+                shortUrlEl.textContent = shortUrl;
+                result.classList.remove('hidden');
+                
+                // Update stats immediately
+                clicksEl.textContent = data.clicks || 0;
+                createdAtEl.textContent = formatDate(data.createdAt) || 'Just now';
+                
+                logDebug('URL shortened successfully', { shortUrl, clicks: data.clicks, createdAt: data.createdAt });
+            } catch (error) {
+                logDebug('Error shortening URL', error.message);
+                alert(error.message);
+            }
+        });
+
+        async function updateStats(shortUrl) {
+            logDebug('Fetching stats for', shortUrl);
+            try {
+                const response = await fetch(`/api/stats/${shortUrl}`);
+                logDebug('Stats response status', response.status);
+                
+                const data = await response.json();
+                logDebug('Stats response data', data);
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to fetch statistics');
+                }
+                
+                result.classList.remove('hidden');
+                const fullUrl = `${window.location.origin}/${data.shortUrl}`;
+                shortUrlEl.href = fullUrl;
+                shortUrlEl.textContent = fullUrl;
+                clicksEl.textContent = data.clicks || 0;
+                createdAtEl.textContent = formatDate(data.createdAt);
+                
+                logDebug('Stats updated successfully', { 
+                    clicks: data.clicks, 
+                    createdAt: data.createdAt 
+                });
+            } catch (error) {
+                logDebug('Error fetching stats', error.message);
+                alert('Failed to fetch URL statistics: ' + error.message);
+            }
+        }
+
+        function formatDate(dateString) {
+            try {
+                const date = new Date(dateString);
+                if (isNaN(date.getTime())) {
+                    return 'Invalid date';
+                }
+                return date.toLocaleString();
+            } catch (error) {
+                logDebug('Date formatting error', error.message);
+                return 'Date unavailable';
+            }
+        }
+
+        async function copyUrl() {
+            try {
+                await navigator.clipboard.writeText(shortUrlEl.href);
+                const originalText = shortUrlEl.textContent;
+                shortUrlEl.textContent = 'Copied!';
+                setTimeout(() => {
+                    shortUrlEl.textContent = originalText;
+                }, 2000);
+            } catch (error) {
+                logDebug('Copy error', error.message);
+                alert('Failed to copy URL to clipboard');
+            }
+        }
+    </script>
+</body>
+</html>
